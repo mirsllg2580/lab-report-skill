@@ -1,0 +1,12 @@
+{
+  "name": "lab-report-skill",
+  "version": "1.0.0",
+  "private": true,
+  "description": "课程实验报告 / 上机报告 Word 生成 skill（spec 驱动，三线表代码，正交流程图）",
+  "scripts": {
+    "build": "node scripts/build-report.js -Spec examples/upper-report-leetcode217.json"
+  },
+  "dependencies": {
+    "@viz-js/viz": "^3.31.0"
+  }
+}

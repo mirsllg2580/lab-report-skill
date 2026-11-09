@@ -1,0 +1,63 @@
+/* LeetCode 217 存在重复元素 —— 控制流图
+   样式约束（lab-report skill）：白底、黑色细轮廓、黑色文字、起止用直边矩形、连接线无曲线。
+   两个本机已验证的坑：
+     1) ortho 会丢边 label，是/否 必须用 taillabel；
+     2) 这个 WASM 构建按"空格"估中文字宽，节点必须显式给 width= 兜住，否则文字撑出框。
+*/
+digraph LC217 {
+    graph [
+        rankdir = TB,
+        splines = ortho,
+        newrank = true,
+        nodesep = 0.55,
+        ranksep = 0.34,
+        margin  = 0.40,
+        dpi     = 160,
+        fontname = "SimSun",
+        fontsize = 13
+    ];
+
+    node [
+        shape    = box,
+        fontname = "SimSun",
+        fontsize = 12,
+        style    = filled,
+        fillcolor= white,
+        color    = black,
+        penwidth = 1.0,
+        margin   = "0.14,0.10"
+    ];
+
+    edge [
+        fontname  = "SimSun",
+        fontsize  = 11,
+        color     = black,
+        penwidth  = 1.0,
+        arrowsize = 0.7
+    ];
+
+    START [label = "开始"];
+    IN    [shape = parallelogram, label = "输入数组 nums", width = 2.2];
+    INIT  [label = "s = 空集合\nn = nums 的长度", width = 2.6];
+    I0    [label = "i = 0"];
+    LOOP  [shape = diamond, label = "i < n ?", width = 2.2, height = 1.1];
+    GET   [label = "x = nums[i]", width = 2.0];
+    HAS   [shape = diamond, label = "x 已在 s 中 ?", width = 2.8, height = 1.1];
+    ADD   [label = "把 x 加入 s\ni = i + 1", width = 2.4];
+    RT    [label = "返回 true", width = 1.8];
+    RF    [label = "返回 false", width = 1.8];
+    END   [label = "结束"];
+
+    START -> IN;
+    IN    -> INIT;
+    INIT  -> I0;
+    I0    -> LOOP;
+    LOOP  -> GET [taillabel = "是"];
+    LOOP  -> RF  [taillabel = "否"];
+    GET   -> HAS;
+    HAS   -> RT  [taillabel = "是"];
+    HAS   -> ADD [taillabel = "否"];
+    ADD   -> LOOP;
+    RT    -> END;
+    RF    -> END;
+}
