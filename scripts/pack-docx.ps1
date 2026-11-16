@@ -72,5 +72,8 @@ if (-not $SkipWordCheck) {
     $doc.Repaginate()
     Write-Output ("WORD_OK paragraphs=" + $doc.Paragraphs.Count + " tables=" + $doc.Tables.Count)
     $doc.Close($false)
-  } finally { $word.Quit() }
+  } finally {
+    # Word COM 收尾偶发 RPC 0x800706BE（验开已通过时不影响成品）；只警告不失败
+    try { $word.Quit() } catch { Write-Output ("WORD_QUIT_WARN " + $_.Exception.Message) }
+  }
 }

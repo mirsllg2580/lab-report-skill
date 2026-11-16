@@ -1,0 +1,33 @@
+{
+  "_note": "LeetCode 217 单主线流程图 spec。主线顺序即代码控制流；return true 是循环中途跳出，与回边跨度交错，渲染器自动加跨线桥。rt 框底与 m1 之间留空（noUpper）：rt 的唯一出口是右侧跳出线，画直连会暗示错误流向。",
+  "fontsize": 12,
+  "gap": 22,
+  "spine": [
+    { "id": "start", "label": "开始", "w": 1.2 },
+    { "id": "in", "label": "输入数组 nums", "shape": "parallelogram", "w": 2.2 },
+    { "id": "init", "label": "s = 空集合\nn = nums 的长度", "w": 2.6 },
+    { "id": "i0", "label": "i = 0", "w": 1.2 },
+    { "id": "loop", "label": "i < n ?", "shape": "diamond", "w": 2.2, "h": 1.0 },
+    { "id": "get", "label": "x = nums[i]", "w": 2.0 },
+    { "id": "has", "label": "x 已在 s 中 ?", "shape": "diamond", "w": 2.8, "h": 1.0 },
+    { "id": "rt", "label": "返回 true", "w": 1.8 },
+    { "id": "add", "label": "把 x 加入 s", "w": 2.0 },
+    { "id": "i1", "label": "i = i + 1", "w": 1.4 },
+    { "id": "rf", "label": "返回 false", "w": 1.8 },
+    { "id": "end", "label": "结束", "w": 1.2 }
+  ],
+  "spineLabels": { "loop->get": "是", "has->rt": "是" },
+  "merges": [
+    { "id": "m1", "between": ["rt", "add"], "noUpper": true },
+    { "id": "m2", "between": ["i1", "rf"] },
+    { "id": "m3", "between": ["rf", "end"] }
+  ],
+  "sides": [
+    { "from": "has", "tail": "w", "side": "L", "to": "m1", "label": "否" },
+    { "from": "loop", "tail": "w", "side": "L", "to": "m2", "label": "否" },
+    { "from": "rt", "tail": "e", "side": "R", "to": "m3" }
+  ],
+  "loops": [
+    { "from": "i1", "tail": "e", "side": "R", "to": "loop", "head": "e" }
+  ]
+}

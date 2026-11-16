@@ -33,8 +33,9 @@ try {
   Copy-Item -LiteralPath $Docx -Destination (Join-Path $stage 'report.docx') -Force
   $doc = $word.Documents.Open((Join-Path $stage 'report.docx'), $false, $true)
   $doc.SaveAs2($html, 10)   # wdFormatFilteredHTML
-  $doc.Close($false)
-} finally { $word.Quit() }
+  # WPS COM 收尾偶发 RPC 失败：html 已导出就不让 teardown 毁掉预览
+  try { $doc.Close($false) } catch { }
+} finally { try { $word.Quit() } catch { } }
 
 try {
   if (-not (Test-Path -LiteralPath $html)) { throw "html export missing: $html" }

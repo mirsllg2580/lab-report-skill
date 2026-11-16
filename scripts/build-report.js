@@ -118,17 +118,32 @@ function prefix(lv, n) {
   throw new Error('非法层级 ' + lv + '（只允许 1-4）');
 }
 
-// ---------- 流程图：交给 flowchart.mjs（DOT -> ortho SVG -> PNG，并做无曲线审计） ----------
+// ---------- 流程图：spine spec 走 spine-flow.mjs（确定性单主线）+ verify-flow.mjs 独立自检；
+//            旧 dot/dotText 走 flowchart.mjs（ortho），仅兼容旧 spec ----------
 const FLOW_SCRIPT = path.join(__dirname, 'flowchart.mjs');
+const SPINE_SCRIPT = path.join(__dirname, 'spine-flow.mjs');
+const VERIFY_SCRIPT = path.join(__dirname, 'verify-flow.mjs');
 function makeFlowchart(fc, dir, n) {
+  const png = path.join(dir, `fig${n}.png`);
+  const svg = path.join(dir, `fig${n}.svg`);
+  if (fc.spine || fc.spineText) {
+    let specPath = fc.spine ? fromSpec(fc.spine) : null;
+    if (!specPath && fc.spineText) {
+      specPath = path.join(dir, `fig${n}.json`);
+      fs.writeFileSync(specPath, typeof fc.spineText === 'string' ? fc.spineText : JSON.stringify(fc.spineText, null, 2), 'utf8');
+    }
+    if (!specPath || !fs.existsSync(specPath)) throw new Error('flowchart 需要 spine 或 spineText，且文件要存在: ' + specPath);
+    console.log(cp.execSync(`node "${SPINE_SCRIPT}" -Spec "${specPath}" -Png "${png}" -Svg "${svg}"`, { encoding: 'utf8' }).trim());
+    console.log(cp.execSync(`node "${VERIFY_SCRIPT}" "${svg}" "${specPath}"`, { encoding: 'utf8' }).trim());
+    if (fc.keepSource) fs.copyFileSync(specPath, path.join(path.dirname(OUT), path.basename(specPath)));
+    return png;
+  }
   let dotPath = fc.dot ? fromSpec(fc.dot) : null;
   if (!dotPath && fc.dotText) {
     dotPath = path.join(dir, `fig${n}.dot`);
     fs.writeFileSync(dotPath, fc.dotText, 'utf8');
   }
-  if (!dotPath || !fs.existsSync(dotPath)) throw new Error('flowchart 需要 dot 或 dotText，且文件要存在: ' + dotPath);
-  const png = path.join(dir, `fig${n}.png`);
-  const svg = path.join(dir, `fig${n}.svg`);
+  if (!dotPath || !fs.existsSync(dotPath)) throw new Error('flowchart 需要 spine/spineText（新）或 dot/dotText（旧兼容），且文件要存在: ' + dotPath);
   const out = cp.execSync(`node "${FLOW_SCRIPT}" -Dot "${dotPath}" -Png "${png}" -Svg "${svg}"` +
     (fc.allowCurves ? ' -AllowCurves' : ''), { encoding: 'utf8' });
   console.log(out.trim());
@@ -217,9 +232,9 @@ for (const el of spec.body) {
   if (el.item) {
     const [lv, text] = el.item;
     cnt[lv]++; for (let d = lv + 1; d <= 4; d++) cnt[d] = 0;
-    // 该条目若还挂着更深层子项，就必须和首子项同页，否则会出现孤立标题
+    // 该条目若还挂着更深层子项或代码/表/图块，就必须和首块同页，否则会出现孤立标题
     const next = spec.body[spec.body.indexOf(el) + 1];
-    const hasChild = next && next.item && next.item[0] > lv;
+    const hasChild = next && ((next.item && next.item[0] > lv) || next.code || next.table || next.flowchart || next.image);
     B.push((hasChild ? ITK : IT)(lv, prefix(lv, cnt[lv]) + text));
     continue;
   }

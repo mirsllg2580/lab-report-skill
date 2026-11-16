@@ -23,7 +23,7 @@ description: 当用户要编写或排版课程实验报告、上机报告（算�
 3. 运行 `node scripts/build-report.js -Spec <spec.json>`。它会解包模板、生成正文、渲染流程图、嵌图、补页脚，并调用 `pack-docx.ps1` 打包后用 Word 验开。
 4. 运行 `pwsh -File scripts/verify-docx.ps1 -Docx <成品> -Pdf <预览.pdf>` 审分页与格式；需要看图时用 `scripts/render-html-preview.ps1`。
 5. 内容只从用户给的题目、代码、运行记录、截图里取。缺关键素材时集中问一次，其余写成"【待补：具体要什么】"继续出可用初稿，不要编造。
-6. 交付 `.docx`（流程图还要交 `.dot`），并列出仍需用户填写的项。
+6. 交付 `.docx`（流程图还要交 spine spec `.json`，旧图交 `.dot`），并列出仍需用户填写的项。
 
 改 spec 比改脚本常用；只有版式本身变了才动 `references/` 和 `assets/`。
 
@@ -44,14 +44,17 @@ description: 当用户要编写或排版课程实验报告、上机报告（算�
 
 ## 流程图 强制
 
-- Visio 基本流程图的朴素样式：白底、黑色细轮廓、黑色文字、统一字号与节点尺寸。处理用矩形、判断用菱形、输入输出用平行四边形，起止写"开始""结束"。
-- **不允许曲线，也不允许斜线**：连接线只能是水平或垂直的直角折线，转角半径为零。
-- 主流程自上而下，判断出口标"是／否"或明确条件；回路绕节点外侧用直角折线；连线不得穿过节点或文字。
-- 内容必须与本次算法、代码和终止条件一致，不能沿用参考里的图。按需给主流程与局部流程，不加装饰性图形。
-- **做法**：写 DOT（`graph[splines=ortho]`），用 `scripts/flowchart.mjs` 经 @viz-js/viz 渲染成 SVG 再截图成 PNG。脚本会当场审计几何并拒绝不合格的输出，不要绕过它手算 SVG 坐标。装 Graphviz 可执行文件不是必需的。
-- DOT 的三个实测要点：`是/否` 必须用 `taillabel`（ortho 会丢 `label`）；每个节点显式给 `width=`（这个构建按空格估中文字宽，不给就会在浏览器里溢出框）；起止用 `shape=box`，不要用 `ellipse` 或圆角。
-- 嵌入 Word 的宽度按"打印可读"定，不是按版面塞满：`dpi=160` 时 SVG 的 pt 数值其实是像素，物理英寸 = pt/160。
-- 同时交付 `.dot` 源文件（spec 里 `keepDot: true`）。只有真实生成并验证过才称为 Visio 文件，不要把 SVG 或 PNG 改扩展名冒充。
+- **单主线**：全部节点沿同一条竖直中轴线自上而下、水平居中；分支与回边一律从节点侧顶点引出、绕外侧、以箭头汇回主线（汇合点）或目标判断框的侧顶点。不允许分支列、不允许一个判断框两条向下箭头、不允许回边从下顶点进判断框。
+- 形状：起止与处理用**圆角矩形**，判断用菱形，**只有真实输入/输出**用平行四边形（"返回 x"算输出）；白底、黑色细轮廓、黑色文字、统一字号。起止写"开始""结束"。
+- 连接线横平竖直；只接图形顶点或汇合点，不得穿过任何框的内部；侧线之间不得交叉，无法避免时（循环中途 return 跳出线与回边跨度交错）用**跨线桥**：竖线断口 14pt + 半圆桥拱，这是唯一允许的曲线例外，渲染器自动加并登记。
+- **汇合点用实心圆点**，且只有一条向下出边进主线上下一个节点。某节点唯一出口是侧线（回边/跳出）时，它的框底与下方汇合点之间**留空不连线**（spec 里该汇合点 `noUpper: true`），画直连会暗示不存在的流向。
+- **循环按"先判后body"画**（while 型）：初始化 → 条件? →是→ 循环体 → 步进步 → 回边接条件侧顶点；条件否 → 退出汇合点。与 `for(init;cond;step)` 语义一致，且 n=0 时不会越界进 body。
+- `是/否` 标号紧贴判断框的分支出口：下出口标在竖线左侧、侧出口标在横线上方；不要标在回流入口。
+- 内容必须与本次算法、代码和终止条件一致，不能沿用参考里的图；**不要为了排版改代码语义**，交错就加跨线桥。按需给主流程与局部流程，不加装饰性图形。
+- **做法**：写 spine spec JSON（`spine` 顺序/`shape`/`w`/`h`、`spineLabels`、`merges`、`sides`、`loops`，抄 `examples/leetcode217-flow.json`），`node scripts/spine-flow.mjs -Spec x.json -Svg x.svg -Png x.png` 确定性排版渲染（车道自动分配：同侧跨度嵌套者短在内道；交错自动跨线桥），再 `node scripts/verify-flow.mjs x.svg x.json` 独立自检（只读 SVG：中轴/边集合/端口/不悬空/不穿框/轴对齐/交叉与桥/标签/向下出边/汇合度）。自检不过就改 spec，不要绕过脚本手算坐标。build-report.js 的 `{"flowchart":{"spine":"x.json"}}` 会自动串这两步，失败即中断构建。
+- 旧 DOT 管线（`flowchart.mjs` + @viz-js/viz ortho）仅兼容旧 spec；**新报告一律 spine**。ortho 实测四轮保证不了侧入/不穿框/单主线（会穿框、回边进下顶点、共线重叠），路由权必须在确定性脚本手里。
+- 嵌入 Word 的宽度按"打印可读"定，不是按版面塞满：`dpi=160` 时 SVG 的 pt 数值其实是像素，物理英寸 = pt/160。单主线图偏高：spec 用 `gap`（默认 36）压节点间距，`widthPt` 按"显示图高 ≤ 640pt 且节点文字 ≥ 9pt"反算（显示字号 = fontsize × widthPt / viewBox 宽）。**标题+图+图题的 keepNext 链一旦高过版心（约 698pt）会被拆链**，图题单独跑下一页，所以图高要留约 60pt 给标题与图题。
+- 同时交付 spine spec `.json` 源文件（spec 里 `keepSource: true`；旧图交 `.dot`）。只有真实生成并验证过才称为 Visio 文件，不要把 SVG 或 PNG 改扩展名冒充。
 - 图居中，图题在图下（如"图1 算法流程图"），按出现顺序连续编号，图与图题不分离。
 
 ## 字体与图表 强制
@@ -62,17 +65,18 @@ description: 当用户要编写或排版课程实验报告、上机报告（算�
 - **表题在表上方、图题在图下方**，都是五号（`sz 21`）、居中；`表1`/`图1` 按出现顺序连续编号，不随章节重置。表题用 `keepNext` 绑住表，图与图题用 `keepNext` 绑住。
 - 普通数据表用 `{table:{caption, header, rows, widths?, align?}}`，同样出三线表；表题由脚本加 `表N` 前缀。图与表都要在正文里先引用后出现。
 
-## 已验证的技术事实（Windows + Word 16）
+## 已验证的技术事实（Windows + WPS 提供的 Word COM）
 
-- Word 16 COM 可用（`New-Object -ComObject Word.Application`），可导出 PDF 与过滤 HTML。
+- 本机 `Word.Application` COM 由 **WPS** 提供（注册表只有 `Word.Application.12`，进程是 `wps.exe`；旧"Word 16"标签已失效）。可导出 PDF 与过滤 HTML，但有两个坑：COM 按 WPS 自己的工作目录解析相对路径，脚本必须先转绝对路径；`Close/Quit` 偶发 RPC 0x800706BA/BE，`pack-docx.ps1`/`verify-docx.ps1` 已容错（验开/采集完成后只警告不失败）。**不要杀用户后台的 wps.exe 进程来"清理环境"**。
 - 无 `pdftotext`、无 ImageMagick、无 Graphviz 可执行文件。PDF 页数用字节里 `/Type /Page` 的出现次数统计，不要信 Word 只读打开时的 `ComputeStatistics(2)`（会返回 1）。
 - Node 可用，OOXML 文本处理用 Node 脚本比 PowerShell 稳。调 PowerShell 脚本用 `pwsh -File`，不是 `pwsh -Command -File`。
 - Graphviz 由 `@viz-js/viz`（Graphviz 16.1.0 的 WASM 构建）提供：在 skill 根目录执行 `npm install` 后 `flowchart.mjs` 直接可用，也可用环境变量 `VIZ_JS_PATH` 指向任意已安装的 `@viz-js/viz`。
 - ortho 输出的 SVG 里边写成"控制点与端点重合"的退化 `C`，肉眼就是直线。所以**判据是几何**（共线偏差 + 轴对齐偏差），数指令字母会把合格图误判成有曲线；且一个 `C` 里可能塞多段折线，解析要按"到下一个命令字母为止"切，否则坐标串位（第一版就因此误报 779pt 斜线）。
+- spine 管线不依赖 @viz-js：纯 Node 算坐标出 SVG，Edge headless 截图。**SVG 的 width/height 必须写 px（= pt×160/72）**：写 pt 时 Edge 按 96dpi 渲染，截图下半幅空白。中文字宽按 SimSun 全角=字号估，节点 `w`（英寸）要给够。
 - 中间产物（解包用的 `t.zip`、渲染出的 `figN.svg/png`）绝不能留在包目录里，否则被一起打包，Word 报"文件可能已经损坏"；`pack-docx.ps1` 现在会先拦一道。
-- `assets/` 下两个 docx 都已在 Word 16 实际打开验证。若某个外部 docx 打不开而 zip 完整，用 `Documents.Open(..., OpenAndRepair:=True)` 修复另存，再逐项核对字号与缩进。
+- `assets/` 下两个 docx 都已用 Word COM（WPS）实际打开验证。若某个外部 docx 打不开而 zip 完整，用 `Documents.Open(..., OpenAndRepair:=True)` 修复另存，再逐项核对字号与缩进。
 - 用 `scripts/pack-docx.ps1` 重打包时，`Test-Path` 会把 `[Content_Types].xml` 的方括号当通配符，必须用 `-LiteralPath`。
-- 图片与其图题必须加 `<w:keepNext/>`，否则分页会把图与图题切成两页；但**不要给每个条目都加**——那会把它们串成长链，整链被推到下一页，页面中间留下大片空白。只绑"标题→首段、表题→表、图→图题"。代码表反过来：每行 `cantSplit`、表头 `tblHeader`，允许跨页并在下一页重复表头，比整体 `keepNext` 更不容易留空页。
+- 图片与其图题必须加 `<w:keepNext/>`，否则分页会把图与图题切成两页；但**不要给每个条目都加**——那会把它们串成长链，整链被推到下一页，页面中间留下大片空白。只绑"标题→首段/首块（代码、表、图）、表题→表、图→图题"。代码表反过来：每行 `cantSplit`、表头 `tblHeader`，允许跨页并在下一页重复表头，比整体 `keepNext` 更不容易留空页。
 - 拼接 `w:rPr` 片段时同名属性只能出现一次：`w:cs` 写两遍，Word 直接报"无法打开"，而 zip、CRC、UTF-8 都正常。`pack-docx.ps1` 现在打包前会用 `XmlDocument.Load` 逐部件解析，报出具体文件与行列，比 Word 的报错可定位。
 - 嵌入图片要同时改四处：`word/media/`、`[Content_Types].xml` 的 png `Default`、`document.xml.rels`、`document.xml` 根标签的 `xmlns:a`/`xmlns:pic`；少一处 Word 报错但 python-docx 类库照样能读，别只信一个校验器。
 - docx 只要被 Word 保存过一次，正文文字就会被拆成碎片 run，按文本定位替换会失败。要改内容就回到模板重建整段正文，不要在 Word 存过的文件上打补丁。
@@ -84,7 +88,7 @@ description: 当用户要编写或排版课程实验报告、上机报告（算�
 - 正文西文/数字是 `Times New Roman`、中文是宋体（导出的 PDF 字体表里应同时出现 `TimesNewRoman` 与 `SimSun`）。
 - 代码是三线表、`CourierNew`、无注释；表题在表上方、图题在图下方，均五号且编号连续。
 - 四级编号可见值与缩进正确，无旧编号残留，无自动编号叠加。
-- 流程图无曲线无圆角，节点含义、分支、箭头、终止条件正确。
+- 流程图单主线、横平竖直（跨线桥拱除外）、圆角矩形/菱形/平行四边形用法正确、汇合实心点、标号贴出口；`verify-flow.mjs` 全过；节点含义、分支、箭头、终止条件与代码一致。
 - 参考样例里的姓名、学号、日期、实验内容、截图已替换；来源不充分的内容有明确标记。
 - 中文与 `①` 等带圈数字正常显示；逐页无遮挡、无图表溢出、无孤立标题、无多余空白页。不强制固定页数。
 
@@ -100,3 +104,5 @@ description: 当用户要编写或排版课程实验报告、上机报告（算�
 | "注释是代码的一部分" | 报告里的代码不加注释；要把解释写进正文的算法思路，不要塞进代码块 |
 | "表题放表下面、图题放图上面都行" | 反过来：表题在上、图题在下，都是五号居中 |
 | "Word 打不开就是打包坏了" | 先跑 `XmlDocument` 解析；多半是某个 XML 属性重复或标签顺序错，Word 的报错不会告诉你位置 |
+| "流程图交给 Graphviz ortho 排就行" | 实测四轮：ortho 会穿框、回边进下顶点、共线重叠、分支列乱跑；单主线/侧入/不穿框只能靠 `spine-flow.mjs` 确定性排版 + `verify-flow.mjs` 独立自检 |
+| "回边和跳出线交叉就合并成一条线" | 语义不同的两条回流线合并会改逻辑；交叉处加跨线桥（竖线断口+半圆拱），自检会登记核对 |

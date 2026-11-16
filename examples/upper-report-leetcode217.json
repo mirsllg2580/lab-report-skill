@@ -154,9 +154,9 @@
     },
     {
       "flowchart": {
-        "dot": "leetcode217.dot",
-        "widthPt": 330,
-        "keepDot": true,
+        "spine": "leetcode217-flow.json",
+        "widthPt": 300,
+        "keepSource": true,
         "caption": "图2 LeetCode 217 存在重复元素算法流程图"
       }
     },

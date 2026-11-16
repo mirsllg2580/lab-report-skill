@@ -8,6 +8,9 @@ param(
   [string]$Pdf
 )
 $ErrorActionPreference = 'Stop'
+# WPS/Word COM 按它自己的工作目录解析相对路径，必须转绝对路径
+$Docx = (Resolve-Path -LiteralPath $Docx).Path
+if ($Pdf) { $Pdf = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Pdf) }
 if (-not $Out) { $Out = [System.IO.Path]::ChangeExtension($Docx, '.check.txt') }
 if (-not $Pdf) { $Pdf = [System.IO.Path]::ChangeExtension($Docx, '.pdf') }
 
@@ -69,8 +72,9 @@ try {
     $lines.Add("PDF_FONTS=" + ($fonts -join ', '))
   }
 
-  $doc.Close($false)
-} finally { $word.Quit() }
+  # 本机 Word COM 收尾偶发 RPC 失败（0x800706BA/BE）：数据已采完就不让 teardown 毁掉报告
+  try { $doc.Close($false) } catch { $lines.Add("CLOSE_WARN " + $_.Exception.Message) }
+} finally { try { $word.Quit() } catch { } }
 
 [System.IO.File]::WriteAllLines($Out, $lines, (New-Object System.Text.UTF8Encoding($false)))
 Write-Output ("WROTE " + $Out + " (" + $lines.Count + " lines)")
