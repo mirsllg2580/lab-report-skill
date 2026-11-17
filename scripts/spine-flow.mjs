@@ -4,7 +4,7 @@
 // 约定（SKILL.md「流程图 强制」）：
 //   全部节点沿竖直中轴线自上而下；分支/回边从侧顶点引出、外侧绕行、箭头汇回主线汇合点或目标侧顶点；
 //   汇合点实心圆点且只有一条向下出边；只接顶点不穿框；横平竖直；标签紧贴分支出口；
-//   同侧侧线跨度嵌套者短在内道；跨度交错必然交叉，自动加跨线桥（竖线断口+半圆桥拱，唯一曲线例外）。
+//   同侧侧线跨度嵌套者短在内道；跨度交错即交叉，直接报错（不允许跨线桥），须改 spec：换侧/换汇合点/调主线顺序。
 // 布局是算出来的，不是 Graphviz 排的：ortho 实测保证不了侧入/不穿框，故路由权在本脚本。
 'use strict';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -66,7 +66,7 @@ for (const l of spec.loops || []) {
   claim(l.from, l.tail, 'loop'); claim(l.to, l.head, 'loop');
 }
 
-// ---- 车道自动分配：同侧按跨度长度升序（嵌套短者内道），交错者后面加跨线桥 ----
+// ---- 车道自动分配：同侧按跨度长度升序（嵌套短者内道）；交错即交叉，后面直接报错 ----
 const maxHalf = Math.max(...Object.values(N).map(n => n.wpt / 2));
 const laneBase = Math.ceil(maxHalf + LANE_STEP);
 const sideEdges = [];
@@ -116,7 +116,7 @@ for (const e of sideEdges) {
   }
 }
 
-// ---- 交叉检测与跨线桥：H×V 真交叉处，竖直段断口 14pt + 半圆桥拱（唯一曲线例外，登记供自检） ----
+// ---- 交叉检测：H×V 真交叉（水平段穿过另一条边的竖直段内部） ----
 const segList = () => edges.flatMap(e => e.pts.slice(0, -1).map((p, i) => ({ e: e.name, p, q: e.pts[i + 1], i })));
 const crossings = () => {
   const segs = segList(), out = [];
@@ -133,22 +133,12 @@ const crossings = () => {
   }
   return out;
 };
-const bridges = [];
-for (let pass = 0; pass < 8; pass++) {
-  const cs = crossings().filter(c => !bridges.some(b => Math.abs(b.x - c.x) < 1 && Math.abs(b.y - c.y) < 1));
-  if (!cs.length) break;
-  const c = cs[0];
-  const e = edges.find(x => x.name === c.v);
-  const p = e.pts[c.vi], q = e.pts[c.vi + 1];
-  const down = q[1] > p[1];
-  const g = down ? [[c.x, c.y - 7], [c.x, c.y + 7]] : [[c.x, c.y + 7], [c.x, c.y - 7]];
-  e.pts.splice(c.vi + 1, 0, ...g);
-  e.gaps = e.gaps || [];
-  e.gaps.push({ i: c.vi + 1, x: c.x, y: c.y });
-  bridges.push({ x: c.x, y: c.y });
-}
-if (crossings().filter(c => !bridges.some(b => Math.abs(b.x - c.x) < 1 && Math.abs(b.y - c.y) < 1)).length)
-  throw new Error('仍有侧线交叉且加桥失败：调整主线顺序或侧线出口');
+// ---- 交叉检测：不允许任何交叉，也不允许跨线桥（桥拱是曲线，违反横平竖直） ----
+// 交错即报错，作者必须改 spec：换侧、换汇合点位置、或调整主线顺序使跨度嵌套/分离。
+const cs = crossings();
+if (cs.length)
+  throw new Error('侧线交叉（禁止跨线桥）: ' + cs.map(c => `${c.h} x ${c.v} @(${c.x.toFixed(0)},${c.y.toFixed(0)})`).join('; ') +
+    ' —— 把其中一条换到另一侧、或移动汇合点/主线顺序使跨度嵌套或分离');
 
 // ---- 标签：紧贴 tail 端口、离线 ----
 const labels = [];
@@ -179,15 +169,9 @@ for (const e of edges) {
     const d = e.arrowDir, last = pts[pts.length - 1];
     pts[pts.length - 1] = [last[0] - d[0] * 8, last[1] - d[1] * 8];
   }
-  const gapAt = new Set((e.gaps || []).map(g => g.i));   // pts[i] 与 pts[i+1] 之间是断口
   let d = `M ${pts[0].join(' ')}`;
-  for (let i = 1; i < pts.length; i++) d += (gapAt.has(i - 1) ? ' M ' : ' L ') + pts[i].join(' ');
+  for (let i = 1; i < pts.length; i++) d += ' L ' + pts[i].join(' ');
   out += `<g class="edge"><title>${esc(e.name)}</title><path d="${d}" fill="none" stroke="black" stroke-width="1"/>\n`;
-  for (const g of e.gaps || []) {
-    const a = e.pts[g.i], b = e.pts[g.i + 1];
-    const sweep = (a[1] < b[1]) ? (g.x > 0 ? 1 : 0) : (g.x > 0 ? 0 : 1);
-    out += `<path class="hop" d="M ${a.join(',')} A 7 7 0 0 ${sweep} ${b.join(',')}" fill="none" stroke="black" stroke-width="1"/>\n`;
-  }
   if (e.arrowDir) {
     const Q = e.pts[e.pts.length - 1], d = e.arrowDir, px = -d[1], py = d[0];
     const b = [Q[0] - d[0] * 8, Q[1] - d[1] * 8];
@@ -212,13 +196,11 @@ for (const n of Object.values(N)) {
 }
 for (const m of Object.values(M))
   out += `<circle class="merge" id="${esc(m.id)}" cx="${m.x}" cy="${m.y}" r="${DOTR}" fill="black"/>\n`;
-for (const b of bridges)
-  out += `<g class="bridge" data-at="${b.x},${b.y}"><title>${b.x},${b.y}</title></g>\n`;
 for (const l of labels)
   out += `<text class="blabel" data-edge="${esc(l.edge)}" x="${l.pos[0]}" y="${l.pos[1]}" font-family="SimSun" font-size="11" text-anchor="${l.pos[2]}" fill="black">${esc(l.text)}</text>\n`;
 out += `</svg>\n`;
 writeFileSync(svgOut, out, 'utf8');
-console.log(`SVG ${W.toFixed(0)}pt x ${H.toFixed(0)}pt | 车道 ${Object.entries(lanes).map(([k, v]) => k + ':' + v).join(' ')} | 跨线桥 ${bridges.length} 处 -> ${svgOut}`);
+console.log(`SVG ${W.toFixed(0)}pt x ${H.toFixed(0)}pt | 车道 ${Object.entries(lanes).map(([k, v]) => k + ':' + v).join(' ')} | 交叉 0 处 -> ${svgOut}`);
 if (pngOut) {
   const pxW = Math.ceil(W * 160 / 72), pxH = Math.ceil(H * 160 / 72);
   const edge = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';

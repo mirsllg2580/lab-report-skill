@@ -2,14 +2,14 @@
 // 单主线流程图独立自检：只读 SVG + spine spec，不复用渲染器任何中间数据
 //   node verify-flow.mjs <fig.svg> <fig.json>
 // 查：中轴对齐 / 边集合与 spec 一致 / 起点端口 / 箭头不悬空(节点端口或汇合圆点边缘) /
-//     不穿框(菱形/平行四边形逐 y 跨度) / 横平竖直 / 侧线交叉必须有登记跨线桥且桥几何真实存在 /
+//     不穿框(菱形/平行四边形逐 y 跨度) / 横平竖直 / 侧线零交叉(禁止跨线桥与任何曲线) /
 //     标签齐全+归属+贴出口+不压线 / 判断框向下出边<=1 / 汇合点出入度
 'use strict';
 import { readFileSync } from 'node:fs';
 const svg = readFileSync(process.argv[2], 'utf8');
 const spec = JSON.parse(readFileSync(process.argv[3], 'utf8'));
 const dec = s => s.replace(/&#45;/g, '-').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-const nodes = {}, dots = {}, edges = [], labels = [], bridges = [];
+const nodes = {}, dots = {}, edges = [], labels = [];
 for (const m of svg.matchAll(/<g class="node"><title>([^<]*)<\/title>([\s\S]*?)<\/g>/g)) {
   const id = dec(m[1]), body = m[2];
   let pts = [];
@@ -29,14 +29,10 @@ for (const m of svg.matchAll(/<g class="edge"><title>([^<]*)<\/title>([\s\S]*?)<
   const d = (body.match(/<path d="([^"]*)"/) || [])[1] || '';
   const pts = (d.match(/-?[\d.]+ -?[\d.]+/g) || []).map(s => s.split(' ').map(Number));
   const tip = (body.match(/<polygon points="([^"]*)"/) || [])[1];
-  const hops = [...body.matchAll(/<path class="hop" d="M ([\d.-]+),([\d.-]+) A 7 7 0 0 [01] ([\d.-]+),([\d.-]+)"/g)]
-    .map(h => [[+h[1], +h[2]], [+h[3], +h[4]]]);
-  edges.push({ name, pts, tip: tip ? tip.trim().split(/\s+/)[0].split(',').map(Number) : null, hops });
+  edges.push({ name, pts, tip: tip ? tip.trim().split(/\s+/)[0].split(',').map(Number) : null });
 }
 for (const m of svg.matchAll(/<text class="blabel" data-edge="([^"]*)" x="([\d.-]+)" y="([\d.-]+)"[^>]*>([^<]*)</g))
   labels.push({ edge: dec(m[1]), p: [+m[2], +m[3]], text: m[4] });
-for (const m of svg.matchAll(/<g class="bridge" data-at="([\d.-]+),([\d.-]+)"/g))
-  bridges.push([+m[1], +m[2]]);
 
 let bad = 0;
 const fail = msg => { bad++; console.log('BAD ' + msg); };
@@ -119,7 +115,7 @@ for (const e of edges) {
     }
   }
 }
-// 4 侧线交叉：每处真交叉必须有一处登记跨线桥 = 竖线断口 14pt + 半圆桥拱 + 横线确实从桥下穿过
+// 4 侧线交叉：不允许任何交叉，也不允许跨线桥（桥拱是曲线）。出现交叉即不合格，须改 spec。
 const segs = edges.flatMap(e => e.pts.slice(0, -1).map((p, i) => ({ e: e.name, p, q: e.pts[i + 1] })));
 const cross = [];
 for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
@@ -133,22 +129,8 @@ for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) 
   const vy0 = Math.min(v.p[1], v.q[1]), vy1 = Math.max(v.p[1], v.q[1]);
   if (x > hx0 + 0.5 && x < hx1 - 0.5 && y > vy0 + 0.5 && y < vy1 - 0.5) cross.push([x, y, s1.e, s2.e]);
 }
-const unbridged = cross.filter(([x, y]) => !bridges.some(b => Math.abs(b[0] - x) < 1 && Math.abs(b[1] - y) < 1));
-for (const [x, y, e1, e2] of unbridged) fail(`交叉 ${e1} x ${e2} @(${x},${y}) 无跨线桥`);
-for (const [x, y] of bridges) {
-  const ev = edges.find(e => e.pts.some((p, i) => i + 1 < e.pts.length &&
-    p[0] === x && e.pts[i + 1][0] === x && Math.abs(Math.abs(p[1] - e.pts[i + 1][1]) - 14) < 0.1 &&
-    Math.min(p[1], e.pts[i + 1][1]) === y - 7));
-  if (!ev) { fail(`跨线桥 @(${x},${y}) 找不到 14pt 断口`); continue; }
-  if (!ev.hops.some(h => near(h[0], [x, y - 7], 0.1) && near(h[1], [x, y + 7], 0.1) ||
-    near(h[0], [x, y + 7], 0.1) && near(h[1], [x, y - 7], 0.1)))
-    fail(`跨线桥 @(${x},${y}) 断口在但半圆桥拱缺失`);
-  const hpass = segs.some(s => s.e !== ev.name && s.p[1] === y && s.q[1] === y &&
-    x > Math.min(s.p[0], s.q[0]) + 0.5 && x < Math.max(s.p[0], s.q[0]) - 0.5);
-  if (!hpass) fail(`跨线桥 @(${x},${y}) 没有横线从桥下穿过`);
-}
-const marked = bridges.filter(([x, y]) => cross.some(c => Math.abs(c[0] - x) < 1 && Math.abs(c[1] - y) < 1));
-if (marked.length !== bridges.length) fail('有跨线桥登记不在真交叉处');
+for (const [x, y, e1, e2] of cross) fail(`交叉 ${e1} x ${e2} @(${x},${y})：禁止跨线桥，改 spec 换侧/换汇合点/调主线顺序`);
+if (svg.includes('class="hop"') || svg.includes('class="bridge"')) fail('SVG 含跨线桥/桥拱（曲线），不允许');
 // 5 标签齐全 / 归属 / 贴出口 / 不压线
 for (const [edge, text] of Object.entries(wantLabels))
   if (!labels.some(l => l.edge === edge && l.text === text)) fail(`缺标签 ${text} @ ${edge}`);
@@ -177,6 +159,6 @@ for (const m of spec.merges || []) {
   if (gotIn !== inUp + inSide) fail(`${m.id} 入边 ${gotIn} != ${inUp + inSide}`);
   if (gotOut !== 1) fail(`${m.id} 出边 ${gotOut} != 1`);
 }
-console.log(`汇合圆点: ${gotDots.join(',')} | 跨线桥: ${cross.length} 处 | 边 ${edges.length} 条 | 标签 ${labels.length} 个`);
-console.log(bad ? `${bad} 项不合格` : '全部自检通过：中轴/边集合/端口/不悬空/不穿框/轴对齐/交叉与桥/标签/向下出边/汇合度');
+console.log(`汇合圆点: ${gotDots.join(',')} | 交叉: ${cross.length} 处 | 边 ${edges.length} 条 | 标签 ${labels.length} 个`);
+console.log(bad ? `${bad} 项不合格` : '全部自检通过：中轴/边集合/端口/不悬空/不穿框/轴对齐/零交叉/标签/向下出边/汇合度');
 process.exit(bad ? 1 : 0);
