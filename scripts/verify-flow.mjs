@@ -159,6 +159,29 @@ for (const m of spec.merges || []) {
   if (gotIn !== inUp + inSide) fail(`${m.id} 入边 ${gotIn} != ${inUp + inSide}`);
   if (gotOut !== 1) fail(`${m.id} 出边 ${gotOut} != 1`);
 }
+// 8 汇合点可见线段：圆点上下必须留出看得见的线（或 noUpper 的有意留空），
+//   否则小 gap 时线被圆点+箭头吃光，打印出来像"少一截线"。
+for (const m of spec.merges || []) {
+  const d = dots[m.id];
+  if (!d) continue;
+  const down = edges.find(e => e.name === m.id + '->' + m.between[1]);
+  if (down) {
+    const lineEnd = down.pts[down.pts.length - 1][1];
+    const visible = lineEnd - (d.p[1] + d.r);
+    if (visible < 4) fail(`${m.id} 下方可见线段仅 ${visible.toFixed(1)}pt（圆点边缘到箭头尾），应≥4pt：加大 gap 或把圆点上移`);
+  }
+  const a = nodes[m.between[0]];
+  if (a) {
+    const gapTop = (d.p[1] - d.r) - a.y1;
+    if (m.noUpper) {
+      if (gapTop < 6) fail(`${m.id} noUpper 留空仅 ${gapTop.toFixed(1)}pt，应≥6pt 才看得出是有意留空`);
+    } else {
+      const up = edges.find(e => e.name === m.between[0] + '->' + m.id);
+      const visible = up ? (d.p[1] - d.r) - up.pts[0][1] : 0;
+      if (visible < 4) fail(`${m.id} 上方可见线段仅 ${visible.toFixed(1)}pt，应≥4pt`);
+    }
+  }
+}
 console.log(`汇合圆点: ${gotDots.join(',')} | 交叉: ${cross.length} 处 | 边 ${edges.length} 条 | 标签 ${labels.length} 个`);
-console.log(bad ? `${bad} 项不合格` : '全部自检通过：中轴/边集合/端口/不悬空/不穿框/轴对齐/零交叉/标签/向下出边/汇合度');
+console.log(bad ? `${bad} 项不合格` : '全部自检通过：中轴/边集合/端口/不悬空/不穿框/轴对齐/零交叉/标签/向下出边/汇合度/汇合可见线段');
 process.exit(bad ? 1 : 0);

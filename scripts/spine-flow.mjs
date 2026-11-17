@@ -23,10 +23,17 @@ const LANE_STEP = 30;
 const N = {};
 const lines = l => String(l).split('\n');
 const boxH = n => n.shape === 'diamond' ? (n.h || 0.9) * 72 : lines(n.label).length * 15 + 18;
+const mergeBetween = (a, b) => (spec.merges || []).find(m => m.between[0] === a && m.between[1] === b);
+// 含汇合点的间隙至少 30pt：圆点靠上节点放，下方留得下"可见线段+8pt箭头"，
+// 否则小 gap 时半隙≤11pt，线被圆点和箭头吃光，看起来像"少一截线"。
+const MERGE_GAP = 30, DOT_UP = 9, DOT_UP_NOUPPER = 10;
 let y = 0;
-for (const n of spec.spine) {
+for (let i = 0; i < spec.spine.length; i++) {
+  const n = spec.spine[i];
   if (N[n.id]) throw new Error('节点 id 重复: ' + n.id);
-  n.h = boxH(n); n.wpt = (n.w || 1.5) * 72; n.x = 0; n.y = y + n.h / 2; y += n.h + GAP; N[n.id] = n;
+  n.h = boxH(n); n.wpt = (n.w || 1.5) * 72; n.x = 0; n.y = y + n.h / 2;
+  const g = i + 1 < spec.spine.length && mergeBetween(n.id, spec.spine[i + 1].id) ? Math.max(GAP, MERGE_GAP) : GAP;
+  y += n.h + g; N[n.id] = n;
 }
 const M = {};
 for (const m of spec.merges || []) {
@@ -34,7 +41,7 @@ for (const m of spec.merges || []) {
   if (i < 0 || !spec.spine[i + 1] || spec.spine[i + 1].id !== m.between[1])
     throw new Error(`汇合点 ${m.id} 的 between 必须是主干上相邻两节点: ${m.between}`);
   const a = N[m.between[0]], b = N[m.between[1]];
-  m.x = 0; m.y = (a.y + a.h / 2 + b.y - b.h / 2) / 2; M[m.id] = m;
+  m.x = 0; m.y = a.y + a.h / 2 + (m.noUpper ? DOT_UP_NOUPPER : DOT_UP) + DOTR; M[m.id] = m;
 }
 const port = (id, p) => {
   const n = N[id], hw = n.wpt / 2, hh = n.h / 2;
