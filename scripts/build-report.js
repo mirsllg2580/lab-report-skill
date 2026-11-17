@@ -197,6 +197,17 @@ function fillCover(xml, label, value) {
         return rows.join('<w:tr ');
       }
     }
+    // 值格被样例数据占用（如模板预填的实验名称）时，覆盖第一个值格的文本而不是报错
+    const occ = cells[hit + 1];
+    if (/<w:t[ >]/.test(occ.split('</w:tc>')[0])) {
+      let first = true;
+      cells[hit + 1] = occ.replace(/<w:t([^>]*)>[^<]*<\/w:t>/g, (m, attr) => {
+        if (first) { first = false; return `<w:t${attr}>${esc(value)}</w:t>`; }
+        return `<w:t${attr}></w:t>`;
+      });
+      rows[r] = cells.join('<w:tc>');
+      return rows.join('<w:tr ');
+    }
     throw new Error('「' + label + '」同一行没有空值单元格');
   }
   throw new Error('表格里找不到标签「' + label + '」');
